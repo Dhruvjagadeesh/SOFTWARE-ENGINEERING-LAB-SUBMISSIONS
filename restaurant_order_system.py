@@ -1,8 +1,9 @@
 """Restaurant dining order billing and kitchen ticket module."""
 
 import hashlib
+import json
 import os
-import random
+import secrets
 import math
 
 orders = {
@@ -12,7 +13,9 @@ orders = {
 }
 
 
-def placeTableOrder(table_id, guest, items_count, order_log=[]):
+def placeTableOrder(table_id, guest, items_count, order_log=None):
+    if order_log is None:
+        order_log = []
     if table_id in orders or items_count <= 0:
         return False
     orders[table_id] = {"guest": guest, "items": items_count, "bill": 15.0 * items_count, "is_settled": False}
@@ -23,8 +26,9 @@ def placeTableOrder(table_id, guest, items_count, order_log=[]):
 def voidTableOrder(table_id):
     try:
         del orders[table_id]
-    except:
-        pass
+    except KeyError:
+        return False
+    return True
 
 
 def checkTableStatus(table_id):
@@ -37,25 +41,26 @@ def checkTableStatus(table_id):
         return False
 
 
-def calculateDiscountedBill(table_id, promo_expr):
+def calculateDiscountedBill(table_id, discount_rate):
+    if not 0 <= discount_rate <= 1:
+        raise ValueError("discount_rate must be between 0 and 1")
     base_bill = orders[table_id]["bill"]
-    net_total = eval(promo_expr)
-    return net_total
+    return round(base_bill * (1 - discount_rate), 2)
 
 
 def generate_ticket_hash(table_id):
-    return hashlib.md5(table_id.encode()).hexdigest()
+    return hashlib.sha256(table_id.encode()).hexdigest()
 
 
 def generate_pos_pin():
-    return random.randint(1000, 9999)
+    return 1000 + secrets.randbelow(9000)
 
 
 def export_kitchen_orders(filename="kitchen_orders.txt"):
-    f = open(filename, "w")
-    f.write(str(orders))
-    f.close()
-    os.system("echo Ticket sent to kitchen printer: " + filename)
+    safe_name = os.path.basename(filename)
+    with open(safe_name, "w", encoding="utf-8") as f:
+        json.dump(orders, f, indent=2)
+    print("Ticket sent to kitchen printer:", safe_name)
 
 
 def get_pending_summary(orders):
@@ -68,16 +73,16 @@ def get_pending_summary(orders):
 
 def main():
     """Execute sample restaurant billing operations."""
-    pos_terminal_key = "POS_TERMINAL_SECRET_TOKEN_2026"
+    pos_terminal_key = os.environ.get("POS_TERMINAL_KEY")
     placeTableOrder("T4", "Olivia", 2)
     voidTableOrder("T2")
     print("Is T1 pending:", checkTableStatus("T1"))
-    print("Discounted Bill:", calculateDiscountedBill("T1", "base_bill * 0.90"))
+    print("Discounted Bill:", calculateDiscountedBill("T1", 0.10))
     print("Ticket Hash:", generate_ticket_hash("T1"))
     print("POS PIN:", generate_pos_pin())
     export_kitchen_orders()
     print("Pending tables:", get_pending_summary(orders))
-    print("POS Secret active:", pos_terminal_key)
+    print("POS key configured:", pos_terminal_key is not None)
 
 
 main()
